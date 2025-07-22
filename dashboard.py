@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
+import plotly.graph_objects as go
 
 # Set the title of the dashboard
 st.title("Stock Market Explorer")
@@ -10,45 +9,63 @@ st.title("Stock Market Explorer")
 st.subheader("Select a Stock Ticker")
 ticker = st.text_input("Enter the stock ticker symbol (e.g., NVDA, AAPL, TSLA):", value="NVDA")
 
-# Fetch stock data
-st.subheader(f"{ticker.upper()} Stock Price Visualization")
+# Define date range options and their corresponding periods
+date_options = {
+    "1 Day": "1d",
+    "5 Days": "5d",
+    "1 Month": "1mo",
+    "3 Months": "3mo",
+    "YTD": "ytd",
+    "1 Year": "1y",
+    "All": "max"
+}
 
-# Define date range options
-date_options = ["1 Day", "5 Days", "1 Month", "3 Months", "YTD", "1 Year", "All"]
-selected_option = st.selectbox("Select Date Range", date_options)
+# User selects the date range
+selected_option = st.selectbox("Select Date Range", list(date_options.keys()))
 
-# Calculate start and end dates based on the selected option
-end_date = datetime.today()
-if selected_option == "1 Day":
-    start_date = end_date - timedelta(days=1)
-elif selected_option == "5 Days":
-    start_date = end_date - timedelta(days=5)
-elif selected_option == "1 Month":
-    start_date = end_date - timedelta(days=30)
-elif selected_option == "3 Months":
-    start_date = end_date - timedelta(days=90)
-elif selected_option == "YTD":
-    start_date = datetime(end_date.year, 1, 1)
-elif selected_option == "1 Year":
-    start_date = end_date - timedelta(days=365)
-elif selected_option == "All":
-    start_date = datetime(2000, 1, 1)  # Arbitrary start date for "All"
+# Get the selected period from the dictionary
+selected_period = date_options.get(selected_option, "1mo")  # Default to "1mo" if not found
 
 # Caching the data fetching function
 @st.cache_data
-def fetch_data(ticker, start_date, end_date):
-    return yf.download(ticker, start=start_date, end=end_date)
+def fetch_data(ticker, period):
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period=period)
+    # Filter out weekends (Saturday and Sunday)
+    refined_list = hist[hist.index.dayofweek < 5]
+    return refined_list
 
 # Fetch data using the cached function
-data = fetch_data(ticker, start_date, end_date)
+data = fetch_data(ticker, selected_period)
 
-# Check if the DataFrame has multi-level columns
-if isinstance(data.columns, pd.MultiIndex):
-    # Flatten the multi-level columns
-    data.columns = data.columns.get_level_values(0)
+# Remove rows with missing data
+data = data.dropna(subset=['Open', 'High', 'Low', 'Close'])
 
-# Plot the Open, High, Low, and Close prices
+# Remove rows where all four metrics (Open, High, Low, Close) are the same
+data = data[~((data['Open'] == data['High']) & 
+              (data['High'] == data['Low']) & 
+              (data['Low'] == data['Close']))]
+
+# Plot a candlestick chart
 if not data.empty:
-    st.line_chart(data[['Close', 'High', 'Low', 'Open']])
+    fig = go.Figure(data=[go.Candlestick(
+        x=data.index,  # Dates
+        open=data['Open'],  # Open prices
+        high=data['High'],  # High prices
+        low=data['Low'],    # Low prices
+        close=data['Close']  # Close prices
+    )])
+
+    # Customize the layout for better visualization
+    fig.update_layout(
+        title=f"{ticker.upper()} Stock Price Candlestick Chart",
+        xaxis_title="Date",
+        yaxis_title="Price (USD)",
+        xaxis_rangeslider_visible=False,  # Hide the range slider for simplicity
+        xaxis_type="date"
+    )
+
+    # Display the chart in Streamlit
+    st.plotly_chart(fig)
 else:
     st.error("No data available for the selected ticker or date range.")
