@@ -34,11 +34,21 @@ elif selected_option == "1 Year":
 elif selected_option == "All":
     start_date = datetime(2000, 1, 1)  # Arbitrary start date for "All"
 
-# Fetch data from yfinance
-data = yf.download(ticker, start=start_date, end=end_date)
+# Caching the data fetching function
+@st.cache_data
+def fetch_data(ticker, start_date, end_date):
+    return yf.download(ticker, start=start_date, end=end_date)
 
-# Plot the closing price
+# Fetch data using the cached function
+data = fetch_data(ticker, start_date, end_date)
+
+# Check if the DataFrame has multi-level columns
+if isinstance(data.columns, pd.MultiIndex):
+    # Flatten the multi-level columns
+    data.columns = data.columns.get_level_values(0)
+
+# Plot the Open, High, Low, and Close prices
 if not data.empty:
-    st.line_chart(data["Close"])
+    st.line_chart(data[['Close', 'High', 'Low', 'Open']])
 else:
     st.error("No data available for the selected ticker or date range.")
